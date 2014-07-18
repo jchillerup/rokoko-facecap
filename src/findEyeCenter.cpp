@@ -147,7 +147,7 @@ cv::Point findEyeCenter(cv::Mat face, cv::Rect eye, std::string debugWindow) {
   //-- Run the algorithm!
   cv::Mat outSum = cv::Mat::zeros(eyeROI.rows,eyeROI.cols,CV_64F);
   // for each possible center
-  printf("Eye Size: %ix%i\n",outSum.cols,outSum.rows);
+  // printf("Eye Size: %ix%i\n",outSum.cols,outSum.rows);
   for (int y = 0; y < weight.rows; ++y) {
     const unsigned char *Wr = weight.ptr<unsigned char>(y);
     const double *Xr = gradientX.ptr<double>(y), *Yr = gradientY.ptr<double>(y);
