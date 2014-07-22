@@ -21,6 +21,7 @@ using namespace cv;
 /** Function Headers */
 void detectAndDisplay( cv::Mat frame );
 void findFacialMarkers( cv::Mat frame);
+void findFacialMarkersOld( cv::Mat frame);
 
 /** Global variables */
 //-- Note, either copy these two files from opencv/data/haarscascades to your current folder, or change these locations
@@ -29,6 +30,7 @@ cv::CascadeClassifier face_cascade;
 std::string main_window_name = "Capture - Face detection";
 std::string face_window_name = "Capture - Face";
 std::string markers_window_name = "Capture - Facial Markers";
+std::string markers_window_name_alt = "Capture - Facial Markers, alternative";
 cv::RNG rng(12345);
 cv::Mat debugImage;
 cv::Mat skinCrCbHist = cv::Mat::zeros(cv::Size(256, 256), CV_8UC1);
@@ -56,6 +58,9 @@ int main( int argc, const char** argv ) {
   cv::moveWindow(face_window_name, 10, 100);
   cv::namedWindow(markers_window_name,CV_WINDOW_NORMAL);
   cv::moveWindow(markers_window_name, 800, 100);
+
+  cv::namedWindow(markers_window_name_alt,CV_WINDOW_NORMAL);
+  cv::moveWindow(markers_window_name_alt, 800, 500);
   
   cv::namedWindow("Right Eye",CV_WINDOW_NORMAL);
   cv::moveWindow("Right Eye", 10, 600);
@@ -76,9 +81,8 @@ int main( int argc, const char** argv ) {
 
   // Read the video stream
   //capture = cvCaptureFromFile("../../res/jc.jpg" );
-  capture = cvCaptureFromCAM(2);
+  capture = cvCaptureFromCAM(1);
   if( capture ) {
-
     while( true ) {
       frame = cvQueryFrame( capture );
       cv::flip(frame, frame, 1);
@@ -89,7 +93,7 @@ int main( int argc, const char** argv ) {
       // Apply the classifier to the frame
       if( !frame.empty() ) {
         findFacialMarkers(frame);
-        
+        findFacialMarkersOld(frame);
         detectAndDisplay(frame);
       }
       else {
@@ -132,6 +136,16 @@ void findFacialMarkers(cv::Mat frame) {
 
     circle(debugImage, center, 3, Scalar(0, 0, 255), -1);
   }
+}
+
+void findFacialMarkersOld(cv::Mat frame) {
+  std::vector<cv::Mat> rgbChannels(3);
+  cv::split(frame, rgbChannels);
+  cv::Mat greens;
+
+  cv::bitwise_and(rgbChannels[1] > 150, rgbChannels[1] > rgbChannels[2], greens);
+  
+  imshow(markers_window_name_alt.c_str(), greens);
 }
 
 void findEyes(cv::Mat frame_gray, cv::Rect face) {
