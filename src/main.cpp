@@ -8,20 +8,22 @@
 #include <math.h>
 #include <vector>
 
+using namespace std;
+using namespace cv;
+
 #include "constants.h"
 #include "findEyeCenter.h"
 #include "findEyeCorner.h"
 
-using namespace std;
-using namespace cv;
-
-/** Constants **/
+#include "lo/lo.h"
+#include "rokoko-common.c"
 
 
 /** Function Headers */
-void detectAndDisplay( cv::Mat frame );
-void findFacialMarkers( cv::Mat frame);
-void findFacialMarkersOld( cv::Mat frame);
+void detectAndDisplay( cv::Mat frame, rokoko_face* );
+void findFacialMarkers( cv::Mat frame, rokoko_face* );
+void findFacialMarkersOld( cv::Mat frame );
+void dispatch_osc(rokoko_face*);
 
 /** Global variables */
 //-- Note, either copy these two files from opencv/data/haarscascades to your current folder, or change these locations
@@ -36,13 +38,14 @@ cv::Mat debugImage;
 cv::Mat skinCrCbHist = cv::Mat::zeros(cv::Size(256, 256), CV_8UC1);
 
 int iLowH = 47;
-int iHighH = 59;
-int iLowS = 82; 
+int iHighH = 77;
+int iLowS = 82;
 int iHighS = 255;
 int iLowV = 64;
 int iHighV = 255;
 int contourAreaMin = 100;
 bool rotateCam = false;
+lo_address recipient = lo_address_new("127.0.0.1", "14040");
 
 /**
  * @function main
@@ -50,7 +53,7 @@ bool rotateCam = false;
 int main( int argc, const char** argv ) {
   CvCapture* capture;
   cv::Mat frame;
-  
+
   // Load the cascades
   if( !face_cascade.load( face_cascade_name ) ){ printf("--(!)Error loading face cascade, please change face_cascade_name in source code.\n"); return -1; };
 
@@ -61,14 +64,6 @@ int main( int argc, const char** argv ) {
   cv::namedWindow(markers_window_name,CV_WINDOW_NORMAL);
   cv::moveWindow(markers_window_name, 800, 100);
 
-  // cv::namedWindow(markers_window_name_alt,CV_WINDOW_NORMAL);
-  // cv::moveWindow(markers_window_name_alt, 800, 500);
-  
-  // cv::namedWindow("Right Eye",CV_WINDOW_NORMAL);
-  // cv::moveWindow("Right Eye", 10, 600);
-  // cv::namedWindow("Left Eye",CV_WINDOW_NORMAL);
-  // cv::moveWindow("Left Eye", 10, 800);
-
   // Add trackbars for the HSV settings
   cvCreateTrackbar("LowH",  markers_window_name.c_str(), &iLowH, 179); //Hue (0 - 179)
   cvCreateTrackbar("HighH", markers_window_name.c_str(), &iHighH, 179);
@@ -77,16 +72,16 @@ int main( int argc, const char** argv ) {
   cvCreateTrackbar("LowV",  markers_window_name.c_str(), &iLowV, 255); //Value (0 - 255)
   cvCreateTrackbar("HighV", markers_window_name.c_str(), &iHighV, 255);
   cvCreateTrackbar("ContourAreaMin", markers_window_name.c_str(), &contourAreaMin, 1000);
- 
+
   createCornerKernels();
   ellipse(skinCrCbHist, cv::Point(113, 155.6), cv::Size(23.4, 15.2),
           43.0, 0.0, 360.0, cv::Scalar(255, 255, 255), -1);
 
   // Read the video stream
-  //capture = cvCaptureFromFile("../../res/jc.jpg" );
   capture = cvCaptureFromCAM(-1);
   if( capture ) {
     while( true ) {
+      rokoko_face cur_face;
       frame = cvQueryFrame( capture );
       cv::flip(frame, frame, 1);
 
@@ -99,16 +94,20 @@ int main( int argc, const char** argv ) {
       frame.copyTo(debugImage);
 
       // Apply the classifier to the frame
+      // This is where the magic happens
       if( !frame.empty() ) {
-        findFacialMarkers(frame);
+        findFacialMarkers(frame, &cur_face);
         //findFacialMarkersOld(frame);
-        detectAndDisplay(frame);
+        detectAndDisplay(frame, &cur_face);
       }
       else {
         printf(" --(!) No captured frame -- Break!");
         break;
       }
-      
+
+      // Make an OSC packet with the face data.
+      dispatch_osc(&cur_face);
+
       imshow(main_window_name, debugImage);
 
       int c = cv::waitKey(10);
@@ -124,10 +123,21 @@ int main( int argc, const char** argv ) {
   return 0;
 }
 
-void findFacialMarkers(cv::Mat frame) {
+
+
+void dispatch_osc(rokoko_face* cur_face) {
+  pretty_print_face(cur_face);
+
+  lo_blob blob = lo_blob_new(sizeof(rokoko_face), cur_face);
+  lo_send(recipient, "/face", "b", blob);
+}
+
+
+void findFacialMarkers(cv::Mat frame, rokoko_face* cur_face) {
   vector<vector<cv::Point> > contours;
   vector<cv::Vec4i> hierarchy;
-  
+  int contours_idx = 0;
+
   cv::Mat imgHSV;
   cv::cvtColor(frame, imgHSV, cv::COLOR_RGB2HSV); //Convert the captured frame from RGB to HSV
 
@@ -137,20 +147,24 @@ void findFacialMarkers(cv::Mat frame) {
   imshow(markers_window_name.c_str(), imgThresholded);
 
   // TODO: Apply erosion/dilation to imgThresholded?
-  
+
   cv::findContours(imgThresholded, contours, hierarchy, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_NONE, cv::Point(0, 0));
-  
+
   for (int i = 0; i < contours.size(); i++) {
-    if (contourArea(contours[i]) < contourAreaMin) continue;
-    
+    if (contourArea(contours[i]) < contourAreaMin || contours_idx == MAX_CONTOURS) continue;
+
     Rect bound = boundingRect(contours[i]);
     Point center = Point( bound.x + (bound.width / 2), bound.y + (bound.height / 2));
 
     // We don't need to store imgThresholded.cols and .rows / 2 because <3 compilers.
-    cout << "(" << center.x - (imgThresholded.cols/2) << ", " << center.y - (imgThresholded.rows/2) << ")" << endl;
-    
+    //cout << "(" << center.x - (imgThresholded.cols/2) << ", " << center.y - (imgThresholded.rows/2) << ")" << endl;
+
     circle(debugImage, center, 3, Scalar(0, 0, 255), -1);
+
+    cur_face->contours[contours_idx++] = center;
   }
+
+  cur_face->num_contours = contours_idx;
 }
 
 void findFacialMarkersOld(cv::Mat frame) {
@@ -164,11 +178,10 @@ void findFacialMarkersOld(cv::Mat frame) {
   cv::bitwise_and(rgbChannels[1] > mingreen, rgbChannels[1] > (rgbChannels[2] * gor), greens);
   cv::bitwise_and(greens, rgbChannels[1] > (rgbChannels[0] * gor), greens);
 
-  
   imshow(markers_window_name_alt.c_str(), greens);
 }
 
-void findEyes(cv::Mat frame_gray, cv::Rect face) {
+void findEyes(cv::Mat frame_gray, cv::Rect face, rokoko_face* cur_face) {
   cv::Mat faceROI = frame_gray(face);
   cv::Mat debugFace = faceROI;
 
@@ -219,6 +232,10 @@ void findEyes(cv::Mat frame_gray, cv::Rect face) {
   // draw eye centers
   circle(debugFace, rightPupil, 3, 1234);
   circle(debugFace, leftPupil, 3, 1234);
+
+  // Put the coordinates into our face structure
+  cur_face->left_eye = leftPupil;
+  cur_face->right_eye = rightPupil;
 
   //-- Find Eye Corners
   if (kEnableEyeCorner) {
@@ -271,13 +288,13 @@ cv::Mat findSkin (cv::Mat &frame) {
 /**
  * @function detectAndDisplay
  */
-void detectAndDisplay( cv::Mat frame ) {
+void detectAndDisplay( cv::Mat frame, rokoko_face* cur_face) {
   std::vector<cv::Rect> faces;
   //cv::Mat frame_gray;
 
   std::vector<cv::Mat> rgbChannels(3);
   cv::split(frame, rgbChannels);
-  cv::Mat frame_gray = rgbChannels[2]; // Used to be rgbChannels[2], i.e. the blue channel.
+  cv::Mat frame_gray = rgbChannels[2];
 
   //cvtColor( frame, frame_gray, CV_BGR2GRAY );
   //equalizeHist( frame_gray, frame_gray );
@@ -286,12 +303,11 @@ void detectAndDisplay( cv::Mat frame ) {
   face_cascade.detectMultiScale( frame_gray, faces, 1.1, 2, 0|CV_HAAR_SCALE_IMAGE|CV_HAAR_FIND_BIGGEST_OBJECT, cv::Size(150, 150) );
   //  findSkin(debugImage);
 
-  for( int i = 0; i < faces.size(); i++ )
-    {
-      rectangle(debugImage, faces[i], 1234);
-    }
+  for( int i = 0; i < faces.size(); i++ ) {
+    rectangle(debugImage, faces[i], 1234);
+  }
   //-- Show what you got
   if (faces.size() > 0) {
-    findEyes(frame_gray, faces[0]);
+    findEyes(frame_gray, faces[0], cur_face);
   }
 }
