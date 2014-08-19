@@ -35,12 +35,14 @@ cv::RNG rng(12345);
 cv::Mat debugImage;
 cv::Mat skinCrCbHist = cv::Mat::zeros(cv::Size(256, 256), CV_8UC1);
 
-int iLowH = 48;
-int iHighH = 65;
-int iLowS = 115; 
+int iLowH = 47;
+int iHighH = 59;
+int iLowS = 82; 
 int iHighS = 255;
-int iLowV = 178;
-int iHighV = 247;
+int iLowV = 64;
+int iHighV = 255;
+int contourAreaMin = 100;
+bool rotateCam = false;
 
 /**
  * @function main
@@ -59,13 +61,13 @@ int main( int argc, const char** argv ) {
   cv::namedWindow(markers_window_name,CV_WINDOW_NORMAL);
   cv::moveWindow(markers_window_name, 800, 100);
 
-  cv::namedWindow(markers_window_name_alt,CV_WINDOW_NORMAL);
-  cv::moveWindow(markers_window_name_alt, 800, 500);
+  // cv::namedWindow(markers_window_name_alt,CV_WINDOW_NORMAL);
+  // cv::moveWindow(markers_window_name_alt, 800, 500);
   
-  cv::namedWindow("Right Eye",CV_WINDOW_NORMAL);
-  cv::moveWindow("Right Eye", 10, 600);
-  cv::namedWindow("Left Eye",CV_WINDOW_NORMAL);
-  cv::moveWindow("Left Eye", 10, 800);
+  // cv::namedWindow("Right Eye",CV_WINDOW_NORMAL);
+  // cv::moveWindow("Right Eye", 10, 600);
+  // cv::namedWindow("Left Eye",CV_WINDOW_NORMAL);
+  // cv::moveWindow("Left Eye", 10, 800);
 
   // Add trackbars for the HSV settings
   cvCreateTrackbar("LowH",  markers_window_name.c_str(), &iLowH, 179); //Hue (0 - 179)
@@ -74,6 +76,7 @@ int main( int argc, const char** argv ) {
   cvCreateTrackbar("HighS", markers_window_name.c_str(), &iHighS, 255);
   cvCreateTrackbar("LowV",  markers_window_name.c_str(), &iLowV, 255); //Value (0 - 255)
   cvCreateTrackbar("HighV", markers_window_name.c_str(), &iHighV, 255);
+  cvCreateTrackbar("ContourAreaMin", markers_window_name.c_str(), &contourAreaMin, 1000);
  
   createCornerKernels();
   ellipse(skinCrCbHist, cv::Point(113, 155.6), cv::Size(23.4, 15.2),
@@ -81,26 +84,31 @@ int main( int argc, const char** argv ) {
 
   // Read the video stream
   //capture = cvCaptureFromFile("../../res/jc.jpg" );
-  capture = cvCaptureFromCAM(1);
+  capture = cvCaptureFromCAM(-1);
   if( capture ) {
     while( true ) {
       frame = cvQueryFrame( capture );
       cv::flip(frame, frame, 1);
-      
+
+      if (rotateCam) {
+        // Rotate by 90 degrees
+        frame = frame.t();
+      }
+
       // mirror it
       frame.copyTo(debugImage);
 
       // Apply the classifier to the frame
       if( !frame.empty() ) {
         findFacialMarkers(frame);
-        findFacialMarkersOld(frame);
+        //findFacialMarkersOld(frame);
         detectAndDisplay(frame);
       }
       else {
         printf(" --(!) No captured frame -- Break!");
         break;
       }
-
+      
       imshow(main_window_name, debugImage);
 
       int c = cv::waitKey(10);
@@ -128,12 +136,19 @@ void findFacialMarkers(cv::Mat frame) {
 
   imshow(markers_window_name.c_str(), imgThresholded);
 
+  // TODO: Apply erosion/dilation to imgThresholded?
+  
   cv::findContours(imgThresholded, contours, hierarchy, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_NONE, cv::Point(0, 0));
-
+  
   for (int i = 0; i < contours.size(); i++) {
+    if (contourArea(contours[i]) < contourAreaMin) continue;
+    
     Rect bound = boundingRect(contours[i]);
     Point center = Point( bound.x + (bound.width / 2), bound.y + (bound.height / 2));
 
+    // We don't need to store imgThresholded.cols and .rows / 2 because <3 compilers.
+    cout << "(" << center.x - (imgThresholded.cols/2) << ", " << center.y - (imgThresholded.rows/2) << ")" << endl;
+    
     circle(debugImage, center, 3, Scalar(0, 0, 255), -1);
   }
 }
@@ -143,7 +158,12 @@ void findFacialMarkersOld(cv::Mat frame) {
   cv::split(frame, rgbChannels);
   cv::Mat greens;
 
-  cv::bitwise_and(rgbChannels[1] > 150, rgbChannels[1] > rgbChannels[2], greens);
+  int mingreen = 70;
+  float gor = 1.1;
+
+  cv::bitwise_and(rgbChannels[1] > mingreen, rgbChannels[1] > (rgbChannels[2] * gor), greens);
+  cv::bitwise_and(greens, rgbChannels[1] > (rgbChannels[0] * gor), greens);
+
   
   imshow(markers_window_name_alt.c_str(), greens);
 }
