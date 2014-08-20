@@ -1,4 +1,4 @@
-#define SHOW_GUI
+//define SHOW_GUI
 #include <opencv2/objdetect/objdetect.hpp>
 #include <opencv2/highgui/highgui.hpp>
 #include <opencv2/imgproc/imgproc.hpp>
@@ -49,7 +49,9 @@ int iLowV = 64;
 int iHighV = 255;
 int contourAreaMin = 100;
 bool rotateCam = false;
-lo_address recipient = lo_address_new("192.168.0.115", "14040");
+lo_address recipient;
+
+std::string osc_address;
 
 /**
  * @function main
@@ -58,6 +60,19 @@ int main( int argc, const char** argv ) {
   CvCapture* capture;
   cv::Mat frame;
 
+  if (argc != 4) {
+    printf("Not enough arguments given.\n");
+    printf("Usage: %s <camera_file> <recipient ip> <osc address>\n", argv[0]);
+    return(1);
+  }
+  
+  printf("ROKOKO Face Streamer\nJens Christian Hillerup <jc@bitblueprint.com>\nStreaming from: %s\nStreaming to:   %s\nOSC address:    %s\n", argv[1], argv[2], argv[3]);
+  
+  recipient = lo_address_new(argv[2], "14040");
+  
+  osc_address = argv[2];
+  osc_address.insert(0, 1, '/');
+  
   // Load the cascades
   if( !face_cascade.load( face_cascade_name ) ){ printf("--(!)Error loading face cascade, please change face_cascade_name in source code.\n"); return -1; };
 
@@ -84,7 +99,7 @@ int main( int argc, const char** argv ) {
           43.0, 0.0, 360.0, cv::Scalar(255, 255, 255), -1);
 
   // Read the video stream
-  capture = cvCaptureFromCAM(-1);
+  capture = cvCaptureFromFile(argv[1]);
   if( capture ) {
     while( true ) {
       rokoko_face cur_face;
@@ -130,11 +145,10 @@ int main( int argc, const char** argv ) {
   return 0;
 }
 
-
-
 void dispatch_osc(rokoko_face* cur_face) {
+  //pretty_print_face(cur_face);
   lo_blob blob = lo_blob_new(sizeof(rokoko_face), cur_face);
-  lo_send(recipient, "/face", "b", blob);
+  lo_send(recipient, osc_address.c_str(), "b", blob);
 }
 
 

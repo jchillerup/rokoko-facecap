@@ -8,3 +8,6 @@ The actor is rigged with face paint in 21 places, and the coordinates of those w
 ## Requirements
 * [CvBlob](https://code.google.com/p/cvblob)
 * [liblo](http://liblo.sourceforge.net/)
+
+## TODO
+* Stick to either C or C++. This code is a mess.
