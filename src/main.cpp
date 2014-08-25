@@ -1,4 +1,4 @@
-//define SHOW_GUI
+#define SHOW_GUI
 #include <opencv2/objdetect/objdetect.hpp>
 #include <opencv2/highgui/highgui.hpp>
 #include <opencv2/imgproc/imgproc.hpp>
@@ -48,10 +48,11 @@ int iHighS = 255;
 int iLowV = 64;
 int iHighV = 255;
 int contourAreaMin = 100;
-bool rotateCam = false;
+bool rotateCam = true;
 lo_address recipient;
 
 std::string osc_address;
+std::vector<cv::Rect> faces;
 
 /**
  * @function main
@@ -322,18 +323,20 @@ cv::Mat findSkin (cv::Mat &frame) {
  * @function detectAndDisplay
  */
 void detectAndDisplay( cv::Mat frame, rokoko_face* cur_face) {
-  std::vector<cv::Rect> faces;
+  
   //cv::Mat frame_gray;
 
   std::vector<cv::Mat> rgbChannels(3);
   cv::split(frame, rgbChannels);
-  cv::Mat frame_gray = rgbChannels[1];
+  cv::Mat frame_gray = rgbChannels[2];
 
   //cvtColor( frame, frame_gray, CV_BGR2GRAY );
   //equalizeHist( frame_gray, frame_gray );
   //cv::pow(frame_gray, CV_64F, frame_gray);
   //-- Detect faces
-  face_cascade.detectMultiScale( frame_gray, faces, 1.1, 2, 0|CV_HAAR_SCALE_IMAGE|CV_HAAR_FIND_BIGGEST_OBJECT, cv::Size(150, 150) );
+  if (faces.size() == 0) {
+    face_cascade.detectMultiScale( frame_gray, faces, 1.1, 2, 0|CV_HAAR_SCALE_IMAGE|CV_HAAR_FIND_BIGGEST_OBJECT, cv::Size(150, 150) );
+  }
   //  findSkin(debugImage);
 
   for( int i = 0; i < faces.size(); i++ ) {
